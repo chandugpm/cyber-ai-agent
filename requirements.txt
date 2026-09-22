@@ -1,6 +1,6 @@
-streamlit
-crewai
-crewai-tools
-langchain-groq
-requests
-litellm>=1.35.0
+streamlit==1.32.0
+crewai==0.28.8
+crewai-tools==0.1.7
+langchain-groq==0.1.3
+requests==2.31.0
+pydantic==2.6.3

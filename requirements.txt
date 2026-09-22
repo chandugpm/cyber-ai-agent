@@ -1,4 +1,4 @@
 streamlit
-crewai
+crewai>=1.15.14
 crewai-tools
 requests

@@ -10,18 +10,13 @@ st.set_page_config(page_title="AI SOC Analyst Agent", page_icon="🛡️", layou
 st.title("🛡️ AI SOC Analyst SaaS Agent")
 st.write("Scan suspicious IP addresses and generate automated threat intelligence reports using AI.")
 
-# --- 1. Load API Keys & Configure OpenAI-Compatible Mode ---
+# --- 1. Load API Keys ---
 if "GROQ_API_KEY" in st.secrets and "VIRUSTOTAL_API_KEY" in st.secrets:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
     VIRUSTOTAL_API_KEY = st.secrets["VIRUSTOTAL_API_KEY"]
     
-    # ⚠️ THE GOLDEN FIX: 
-    # We configure Groq to act like 'OpenAI'. This uses the Groq server via the OpenAI protocol.
-    os.environ["OPENAI_API_BASE"] = "https://groq.com"  # Corrected API Endpoint
-    os.environ["OPENAI_API_KEY"] = GROQ_API_KEY 
-    os.environ["OPENAI_MODEL_NAME"] = "llama3-70b-8192" 
-    
-    # VirusTotal key for the tool
+    # Standard Environment Variables for CrewAI & Groq
+    os.environ["GROQ_API_KEY"] = GROQ_API_KEY
     os.environ["VIRUSTOTAL_API_KEY"] = VIRUSTOTAL_API_KEY
 else:
     st.error("⚠️ Error: Missing API Keys! Please configure GROQ_API_KEY and VIRUSTOTAL_API_KEY in Streamlit Secrets.")
@@ -34,12 +29,8 @@ def scan_ip_tool(ip_address: str) -> str:
     Scans a suspicious IP address using the VirusTotal API.
     Returns a summary of harmless, malicious, and suspicious votes.
     """
-    # Note: We fetch the key from secrets directly inside the tool or env
     api_key = os.environ.get("VIRUSTOTAL_API_KEY")
-    
-    # Corrected API URL structure
     url = f"https://virustotal.com{ip_address}"
-    
     headers = {
         "accept": "application/json",
         "x-key": api_key
@@ -65,7 +56,7 @@ if st.button("🤖 Analyze with AI Agent"):
     if not target_ip.strip():
         st.warning("Please enter a valid IP address.")
     else:
-        with st.spinner("🕵️‍♂️ AI Agent is investigating... (This uses Groq via OpenAI Protocol)"):
+        with st.spinner("🕵️‍♂️ AI Agent is investigating..."):
             try:
                 # --- 4. Define the AI Agent ---
                 soc_analyst = Agent(
@@ -76,13 +67,14 @@ if st.button("🤖 Analyze with AI Agent"):
                         "Your job is to investigate suspicious IPs using available tools "
                         "and provide a detailed incident response report."
                     ),
-                    # We use the generic 'openai' string. 
-                    # Since we set OPENAI_API_BASE to Groq, this actually runs on Groq!
-                    llm="openai/llama3-70b-8192",
+                    # Direct Groq String Method (Supported by updated litellm)
+                    llm="groq/llama3-70b-8192",
                     
                     tools=[scan_ip_tool],
                     verbose=True,
                     allow_delegation=False,
+                    
+                    # ⚠️ Critical: Disable caching to avoid Groq unsupported param error
                     cache=False 
                 )
 

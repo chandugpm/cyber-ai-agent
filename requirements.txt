@@ -3,4 +3,3 @@ crewai
 crewai-tools
 langchain-groq
 requests
-litellm

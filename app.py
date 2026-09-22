@@ -10,14 +10,19 @@ st.set_page_config(page_title="AI SOC Analyst Agent", page_icon="🛡️", layou
 st.title("🛡️ AI SOC Analyst SaaS Agent")
 st.write("Scan suspicious IP addresses and generate automated threat intelligence reports using AI.")
 
-# --- 1. Load API Keys ---
+# --- 1. Load API Keys & Configure OpenAI-Compatible Mode ---
 if "GROQ_API_KEY" in st.secrets and "VIRUSTOTAL_API_KEY" in st.secrets:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
     VIRUSTOTAL_API_KEY = st.secrets["VIRUSTOTAL_API_KEY"]
     
-    # Environment variables setup for LiteLLM (Crucial for String Method)
-    os.environ["GROQ_API_KEY"] = GROQ_API_KEY
-    os.environ["OPENAI_API_KEY"] = "NA" # LiteLLM requires this placeholder sometimes
+    # ⚠️ THE GOLDEN FIX: 
+    # We configure Groq to act like 'OpenAI'. This uses the Groq server via the OpenAI protocol.
+    os.environ["OPENAI_API_BASE"] = "https://groq.com"  # Corrected API Endpoint
+    os.environ["OPENAI_API_KEY"] = GROQ_API_KEY 
+    os.environ["OPENAI_MODEL_NAME"] = "llama3-70b-8192" 
+    
+    # VirusTotal key for the tool
+    os.environ["VIRUSTOTAL_API_KEY"] = VIRUSTOTAL_API_KEY
 else:
     st.error("⚠️ Error: Missing API Keys! Please configure GROQ_API_KEY and VIRUSTOTAL_API_KEY in Streamlit Secrets.")
     st.stop()
@@ -29,10 +34,15 @@ def scan_ip_tool(ip_address: str) -> str:
     Scans a suspicious IP address using the VirusTotal API.
     Returns a summary of harmless, malicious, and suspicious votes.
     """
+    # Note: We fetch the key from secrets directly inside the tool or env
+    api_key = os.environ.get("VIRUSTOTAL_API_KEY")
+    
+    # Corrected API URL structure
     url = f"https://virustotal.com{ip_address}"
+    
     headers = {
         "accept": "application/json",
-        "x-key": VIRUSTOTAL_API_KEY
+        "x-key": api_key
     }
     try:
         response = requests.get(url, headers=headers)
@@ -44,7 +54,7 @@ def scan_ip_tool(ip_address: str) -> str:
                     f"Suspicious: {stats['suspicious']}, "
                     f"Harmless: {stats['harmless']}")
         else:
-            return f"Error: Could not fetch data from VirusTotal. Status Code: {response.status_code}"
+            return f"Error: Could not fetch data. Status Code: {response.status_code}"
     except Exception as e:
         return f"Exception during scan: {str(e)}"
 
@@ -55,9 +65,9 @@ if st.button("🤖 Analyze with AI Agent"):
     if not target_ip.strip():
         st.warning("Please enter a valid IP address.")
     else:
-        with st.spinner("🕵️‍♂️ AI Agent is investigating the IP address... Please wait..."):
+        with st.spinner("🕵️‍♂️ AI Agent is investigating... (This uses Groq via OpenAI Protocol)"):
             try:
-                # --- 4. Define the AI Agent (THE FIX IS HERE) ---
+                # --- 4. Define the AI Agent ---
                 soc_analyst = Agent(
                     role='Senior SOC Threat Analyst',
                     goal='Analyze network threats and generate a comprehensive security report.',
@@ -66,16 +76,14 @@ if st.button("🤖 Analyze with AI Agent"):
                         "Your job is to investigate suspicious IPs using available tools "
                         "and provide a detailed incident response report."
                     ),
-                    # We revert to the STRING method which CrewAI understands best
-                    llm="groq/llama3-70b-8192",
+                    # We use the generic 'openai' string. 
+                    # Since we set OPENAI_API_BASE to Groq, this actually runs on Groq!
+                    llm="openai/llama3-70b-8192",
                     
                     tools=[scan_ip_tool],
                     verbose=True,
                     allow_delegation=False,
-                    
-                    # ⚠️ CRITICAL FIX: Disable caching to stop 'cache_breakpoint' errors
-                    cache=False,
-                    max_rpm=30 # Rate limit protection
+                    cache=False 
                 )
 
                 # --- 5. Define the Task ---
@@ -89,7 +97,7 @@ if st.button("🤖 Analyze with AI Agent"):
                         "A professional markdown report in English including:\n"
                         "1. Executive Summary\n"
                         "2. Threat Analysis (Malicious/Clean status)\n"
-                        "3. Recommended Mitigation Steps (if applicable)"
+                        "3. Recommended Mitigation Steps"
                     ),
                     agent=soc_analyst
                 )
@@ -108,4 +116,4 @@ if st.button("🤖 Analyze with AI Agent"):
                 st.markdown(result)
 
             except Exception as e:
-                st.error(f"An error occurred during execution: {str(e)}")
+                st.error(f"An error occurred: {str(e)}")

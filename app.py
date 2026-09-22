@@ -3,7 +3,6 @@ import requests
 import streamlit as st
 from crewai import Agent, Task, Crew
 from crewai.tools import tool
-from langchain_groq import ChatGroq
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(page_title="AI SOC Analyst Agent", page_icon="🛡️", layout="centered")
@@ -11,24 +10,19 @@ st.set_page_config(page_title="AI SOC Analyst Agent", page_icon="🛡️", layou
 st.title("🛡️ AI SOC Analyst SaaS Agent")
 st.write("Scan suspicious IP addresses and generate automated threat intelligence reports using AI.")
 
-# --- 1. Load API Keys from Streamlit Secrets ---
+# --- 1. Load API Keys ---
 if "GROQ_API_KEY" in st.secrets and "VIRUSTOTAL_API_KEY" in st.secrets:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
     VIRUSTOTAL_API_KEY = st.secrets["VIRUSTOTAL_API_KEY"]
-    # Set environment variable for internal tool usage
+    
+    # Environment variables setup for LiteLLM (Crucial for String Method)
     os.environ["GROQ_API_KEY"] = GROQ_API_KEY
+    os.environ["OPENAI_API_KEY"] = "NA" # LiteLLM requires this placeholder sometimes
 else:
     st.error("⚠️ Error: Missing API Keys! Please configure GROQ_API_KEY and VIRUSTOTAL_API_KEY in Streamlit Secrets.")
     st.stop()
 
-# --- 2. Initialize the LLM (AI Brain) ---
-# We use ChatGroq directly to avoid compatibility issues
-llm_engine = ChatGroq(
-    api_key=GROQ_API_KEY,
-    model="llama3-70b-8192"
-)
-
-# --- 3. Define the VirusTotal Scanning Tool ---
+# --- 2. Define the VirusTotal Scanning Tool ---
 @tool("VirusTotal IP Scanner")
 def scan_ip_tool(ip_address: str) -> str:
     """
@@ -54,7 +48,7 @@ def scan_ip_tool(ip_address: str) -> str:
     except Exception as e:
         return f"Exception during scan: {str(e)}"
 
-# --- 4. User Interface ---
+# --- 3. User Interface ---
 target_ip = st.text_input("Enter Suspicious IP Address:", placeholder="e.g., 185.220.101.5")
 
 if st.button("🤖 Analyze with AI Agent"):
@@ -63,7 +57,7 @@ if st.button("🤖 Analyze with AI Agent"):
     else:
         with st.spinner("🕵️‍♂️ AI Agent is investigating the IP address... Please wait..."):
             try:
-                # --- 5. Define the AI Agent ---
+                # --- 4. Define the AI Agent (THE FIX IS HERE) ---
                 soc_analyst = Agent(
                     role='Senior SOC Threat Analyst',
                     goal='Analyze network threats and generate a comprehensive security report.',
@@ -72,14 +66,19 @@ if st.button("🤖 Analyze with AI Agent"):
                         "Your job is to investigate suspicious IPs using available tools "
                         "and provide a detailed incident response report."
                     ),
-                    llm=llm_engine,         # Using the fixed ChatGroq engine
-                    tools=[scan_ip_tool],   # Giving the agent the scanning tool
-                    verbose=True,           # Enable logs in the console
-                    allow_delegation=False, # Simplify the process
-                    cache=False             # CRITICAL FIX: Disable caching to prevent Groq errors
+                    # We revert to the STRING method which CrewAI understands best
+                    llm="groq/llama3-70b-8192",
+                    
+                    tools=[scan_ip_tool],
+                    verbose=True,
+                    allow_delegation=False,
+                    
+                    # ⚠️ CRITICAL FIX: Disable caching to stop 'cache_breakpoint' errors
+                    cache=False,
+                    max_rpm=30 # Rate limit protection
                 )
 
-                # --- 6. Define the Task ---
+                # --- 5. Define the Task ---
                 analysis_task = Task(
                     description=(
                         f"Investigate the IP address '{target_ip}' using the VirusTotal Scanner tool. "
@@ -95,7 +94,7 @@ if st.button("🤖 Analyze with AI Agent"):
                     agent=soc_analyst
                 )
 
-                # --- 7. Execute the Crew ---
+                # --- 6. Execute the Crew ---
                 crew = Crew(
                     agents=[soc_analyst],
                     tasks=[analysis_task]
@@ -103,7 +102,7 @@ if st.button("🤖 Analyze with AI Agent"):
                 
                 result = crew.kickoff()
 
-                # --- 8. Display Results ---
+                # --- 7. Display Results ---
                 st.success("✅ Analysis Completed!")
                 st.markdown("### 📝 Security Incident Report")
                 st.markdown(result)

@@ -1,4 +1,6 @@
 streamlit
 crewai
 crewai-tools
+langchain-groq
 requests
+litellm>=1.35.0
